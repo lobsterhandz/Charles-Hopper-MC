@@ -7,7 +7,7 @@ sdk: gradio
 sdk_version: 5.25.0
 python_version: 3.10
 app_file: app.py
-suggested_hardware: "Nvidia T4 - small"
+suggested_hardware: "ZeroGpu"
 license: mit
 tags:
   - gradio
