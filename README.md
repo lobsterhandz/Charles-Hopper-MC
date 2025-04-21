@@ -3,11 +3,11 @@ title: "Charles Hopper MC"
 emoji: "🎤"
 colorFrom: "gray"
 colorTo: "yellow"
-sdk: gradio                              # or streamlit  
-python_version: 3.10                   
-suggested_hardware: "Nvidia T4 - small"
+sdk: gradio
 sdk_version: 5.25.0
+python_version: 3.10
 app_file: app.py
+suggested_hardware: "Nvidia T4 - small"
 license: mit
 tags:
   - gradio
@@ -20,6 +20,36 @@ tags:
   - ai
   - demo
 ---
+
+# 🎤 Charles Hopper MC
+
+> "Where beats drop and AI talks back."
+
+**Charles Hopper MC** is a freestyle-generating, bar-splitting, beat-synced rap assistant that can talk, rhyme, and respond with attitude. Built with [Bark](https://github.com/suno-ai/bark) TTS, [OpenAI Whisper](https://github.com/openai/whisper), and 🔥 synced with your own custom beats using `librosa`.
+
+## 🧠 Features
+
+- 🎧 Transcribes your voice (STT via Whisper)
+- 🎤 Raps back in character (TTS via Bark)
+- 🥁 Syncs voice bars to beat timing
+- 🎛️ Custom beat uploads + beat mixing
+- 🤖 Emotion-aware voice expression (in progress)
+
+## 🚀 Run Locally
+
+```bash
+git clone https://github.com/YOUR_USERNAME/Charles-Hopper-MC.git
+cd Charles-Hopper-MC
+
+# Create virtual env
+python -m venv venv
+source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run app
+python app.py
 
 # Charles Hopper MC
 
