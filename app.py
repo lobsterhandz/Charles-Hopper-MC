@@ -216,6 +216,15 @@ with gr.Blocks(css=custom_css) as demo:
     - Use Next to advance rounds.
     """)
 
-# Launch the Gradio demo
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    # In Spaces this will be set; locally this will be 0 → auto‐pick a free port
+    port = int(os.environ.get("PORT", 7680))
+
+    # No need for share=True here in production; Gradio will expose on the right port
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        ssr_mode=False,
+        show_error=True,       # pop up useful tracebacks in the browser
+        prevent_thread_lock=True
+    )
