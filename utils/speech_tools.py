@@ -19,30 +19,16 @@ import random
 # ----------------------------------------------------------------------------
 # Setup Device
 # ----------------------------------------------------------------------------
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-USE_GPU = torch.cuda.is_available()
+import logging
 
-# ----------------------------------------------------------------------------
-# Logging setup
-# ----------------------------------------------------------------------------
-logger = logging.getLogger("speech_tools")
-if not logger.handlers:
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 👇 Add this near the top
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 logger.info(f"Whisper device → {DEVICE}")
-logger.info(f"GPU available: {USE_GPU}")
-logger.info(f"Torch device count: {torch.cuda.device_count() if USE_GPU else 0}")
-if USE_GPU:
-    try:
-        logger.info(f"Current device: {torch.cuda.current_device()}")
-    except Exception:
-        logger.warning("Unable to get current CUDA device.")
-
+if DEVICE == "cuda":
+    print("Current device:", torch.cuda.current_device())
 # ----------------------------------------------------------------------------
 # Monkey-patch Bark generate_audio to drop unsupported kwargs
 # ----------------------------------------------------------------------------
