@@ -2,6 +2,7 @@ import numpy as np
 import gradio as gr
 import os
 import random
+import time
 import soundfile as sf
 
 # Import improved modules
@@ -70,7 +71,7 @@ def on_start(go_first, round_num, user_name):
             None,                     # no charlie_mix yet
             gr.update(visible=False),  # play_charlie_button
             gr.update(visible=False),  # next_button
-            gr.update(visible=True),   # start_button remains
+            gr.update(visible=False),  # hide start_button after press
             gr.update(visible=True),   # submit_button
             status
         )
@@ -80,8 +81,10 @@ def on_start(go_first, round_num, user_name):
         bpm = random.choice([86, 88, 90, 92, 94])
         bars_with_timing = split_bars_for_timing(charlie_rap, bpm=bpm)
         build_beat(BEAT_PATH, bpm=bpm)
+        # unique mix filename to force autoplay reload
+        suffix = str(int(time.time() * 1000))
         mix_path, overlay_cnt = sync_bars_to_beat(
-            BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200)
+            BEAT_PATH, bars_with_timing, f"generated/mix_{suffix}.wav", offset_ms=random.randint(600, 1200)
         )
         status = "🎤 Charlie's on the mic! Listen to his 16 bars, then respond."
         if overlay_cnt == 0:
@@ -139,8 +142,10 @@ def on_submit(user_audio, go_first, round_num, user_name):
     # Generate Charlie's response
     charlie_rap = generate_bars(user_lyrics=user_lyrics, charlie_first=False, user_name=user_name)
     bars_with_timing = split_bars_for_timing(charlie_rap, bpm=90)
+    # unique mix filename to force autoplay reload
+    suffix = str(int(time.time() * 1000))
     mix_path, overlay_cnt = sync_bars_to_beat(
-        BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200)
+        BEAT_PATH, bars_with_timing, f"generated/mix_{suffix}.wav", offset_ms=random.randint(600, 1200)
     )
     status = "🔥 Charlie fires back with 16 brutal bars! Ready for the next round?"
     if overlay_cnt == 0:

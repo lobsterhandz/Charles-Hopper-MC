@@ -73,15 +73,28 @@ def generate_bars(
         motifs = [w for w, c in sorted(counts.items(), key=lambda kv: kv[1], reverse=True) if c > 1][:5]
         return last_words[:12], rhyme_keys[:8], motifs
 
+    # Simple name phonetic/alliteration cues
+    def _name_cues(name: str):
+        import re
+        raw = "".join(ch.lower() for ch in (name or "") if ch.isalpha())
+        initial = raw[:1] or "n/a"
+        vowels = "aeiouy"
+        skeleton = "".join(ch for ch in raw if ch not in vowels) or raw or "n/a"
+        # naive syllable-ish chunks
+        chunks = re.findall(r"[^aeiouy]*[aeiouy]+", raw) or [raw] if raw else []
+        return initial, skeleton[:6], chunks[:4]
+
     # User prompt
     if charlie_first:
+        targeting = f" Take a few shots at '{user_name}' by name." if random.random() < 0.5 else ""
         prompt_text = (
             "Open the round with a legendary, hard-hitting 16-bar verse that mercilessly disses "
             "an imaginary opponent. "
-            f"Apply style: {flavor}. Keep each bar on a single line."
+            f"Apply style: {flavor}. Keep each bar on a single line.{targeting}"
         )
     else:
         ends, rhyme_keys, motifs = _cues(user_lyrics or "")
+        init, name_skel, name_chunks = _name_cues(user_name or "")
         prompt_text = (
             f"The user '{user_name}' just performed:\n\n{user_lyrics}\n\n"
             "Now craft a savage, context-aware 16-bar rebuttal with the following constraints:\n"
@@ -89,6 +102,8 @@ def generate_bars(
             f"- Mirror their end-rhyme feel. User line-end tokens: {', '.join(ends) or 'n/a'}; "
             f"approx rhyme keys: {', '.join(rhyme_keys) or 'n/a'}.\n"
             f"- Call back specific phrases/motifs: {', '.join(motifs) or 'n/a'}.\n"
+            f"- Phonetic cues on their name — initial='{init}', skeleton='{name_skel}', chunks={name_chunks}.\n"
+            f"  Include at least 3 bars that use alliteration on '{init}' and 2 bars that rhyme against '{name_skel}'.\n"
             "- Employ phonetic rhythm, internal multisyllabics, and layered metaphors that tie to their name and lines.\n"
             "- Crowd energy and ad-libs sparingly (e.g., (yeah), (uh), (crowd: oooh!)).\n"
             "- Keep each bar on exactly one line; return only the 16 lines.\n"
