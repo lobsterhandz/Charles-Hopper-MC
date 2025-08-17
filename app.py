@@ -242,4 +242,5 @@ with gr.Blocks(css=custom_css) as demo:
 
 # Launch the Gradio demo
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    # Let Hugging Face Spaces manage host/port
+    demo.launch()
