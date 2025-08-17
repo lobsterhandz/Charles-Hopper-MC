@@ -4,8 +4,8 @@ emoji: "🎤"
 colorFrom: "gray"
 colorTo: "yellow"
 sdk: gradio
-python_version: 3.10
-suggested_hardware: "CPU / Any"
+python_version: 3.10.13
+suggested_hardware: zero-a10g
 sdk_version: 5.25.0
 app_file: app.py
 license: mit

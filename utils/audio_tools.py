@@ -21,6 +21,16 @@ from pydub import AudioSegment, effects
 
 from utils.speech_tools import save_bark_tts, apply_spatial_panning, granular_effect, dimension_shift  # writes out TTS WAV files
 
+# ZeroGPU integration (no-op outside Spaces)
+try:
+    import spaces  # type: ignore
+    GPU_DECORATOR = spaces.GPU
+except Exception:
+    def GPU_DECORATOR(*args, **kwargs):
+        def _no_gpu(fn):
+            return fn
+        return _no_gpu
+
 # ----------------------------------------------------------------------------
 # Logging Setup
 # ----------------------------------------------------------------------------
@@ -95,6 +105,7 @@ EMOTION_PARAMS = {
 # ----------------------------------------------------------------------------
 # Core: Sync Bars to Beat
 # ----------------------------------------------------------------------------
+@GPU_DECORATOR(duration=120)
 def sync_bars_to_beat(
     beat_path: str,
     bars_with_timing: List[Tuple[str, int]],
@@ -215,6 +226,7 @@ def sync_bars_to_beat(
 # ----------------------------------------------------------------------------
 # Core: Mix Beat and Full Voice Clip
 # ----------------------------------------------------------------------------
+@GPU_DECORATOR(duration=90)
 def mix_beat_and_voice(
     beat_path: str,
     voice_path: str,
