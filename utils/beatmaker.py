@@ -86,7 +86,9 @@ def sync_bars_to_beat(
 
     def synthesize_one(idx: int, bar: str) -> Optional[AudioSegment]:
         try:
-            clip = synthesize_bark_tts(bar)
+            wav_path = f"generated/beatmaker_bar_{idx}.wav"
+            save_bark_tts(bar, wav_path)
+            clip = AudioSegment.from_wav(wav_path)
             if voice_gain_adjustment:
                 clip = clip.apply_gain(voice_gain_adjustment)
             if apply_fade:

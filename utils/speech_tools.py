@@ -1,25 +1,23 @@
 # utils/speech_tools.py
 """
-Advanced speech_tools with Multi-Dimensional Emcee Technology:
-- Monkey-patched Bark TTS safe call
-- Whisper transcription
-- 3D spatialization and dynamic panning
-- Granular & pitch-shift effects
-- Multi-voice layering
-- Robust error logging and edge-case handling
+Robust speech tools:
+- OpenAI TTS (primary) with gpt-4o-mini-tts
+- Offline fallback via pyttsx3
+- OpenAI transcription (gpt-4o-transcribe with fallback to whisper-1)
+- Optional multi-layer voice effects
 """
 import os
 import logging
-import numpy as np
-import torch
-from pydub import AudioSegment, effects
-from pydub.playback import play
-import whisper
+import random
+from typing import Optional
 
-torch.serialization.add_safe_globals([np.core.multiarray.scalar])
-# ----------------------------------------------------------------------------
-# Logging setup
-# ----------------------------------------------------------------------------
+from pydub import AudioSegment, effects
+
+try:
+    from openai import OpenAI
+except Exception:  # library optional at import time
+    OpenAI = None  # type: ignore
+
 logger = logging.getLogger("speech_tools")
 if not logger.handlers:
     ch = logging.StreamHandler()
@@ -29,89 +27,119 @@ if not logger.handlers:
     logger.addHandler(ch)
 logger.setLevel(logging.INFO)
 
-# ----------------------------------------------------------------------------
-# Monkey-patch Bark generate_audio to drop unsupported kwargs
-# ----------------------------------------------------------------------------
-import bark
-from bark import generate_audio as _orig_generate_audio
+_client: Optional["OpenAI"] = None
 
-# Fully drop all extra args and kwargs—Bark only ever gets `text`
-def _patched_generate_audio(text: str, *args, **kwargs):
-    return _orig_generate_audio(text)
 
-# Override globally
-bark.generate_audio = _patched_generate_audio
+def _get_openai_client() -> Optional["OpenAI"]:
+    global _client
+    if _client is not None:
+        return _client
+    if OpenAI is None:
+        return None
+    try:
+        _client = OpenAI()
+        return _client
+    except Exception as e:
+        logger.warning(f"OpenAI client unavailable: {e}")
+        return None
 
-# Now imports of bark.generate_audio will use the patched version
-from bark import generate_audio
-# In speech_tools.py, after your imports:
-if torch.cuda.is_available():
-    torch.set_default_device("cuda")
-    logger.info("Bark TTS set to run on GPU")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    preload_models(device=device)
-# ----------------------------------------------------------------------------
-# Whisper transcription
-# ----------------------------------------------------------------------------
-# In speech_tools.py, after your imports:
-if torch.cuda.is_available():
-    torch.set_default_device("cuda")
-    logger.info("Bark TTS set to run on GPU")
-logger.info(f"Whisper device → {DEVICE}")
-print("GPU available:", torch.cuda.is_available())
-print("Torch device count:", torch.cuda.device_count())
-print("Current device:", torch.cuda.current_device())
-# Load Whisper on GPU if available
-whisper_model = whisper.load_model("base", device=DEVICE)
 
 def transcribe_user(audio_path: str) -> str:
-    """Transcribe incoming user freestyle audio."""
-    try:
-        result = whisper_model.transcribe(audio_path)
-        text = result.get("text", "")
-        logger.info(f"Transcribed user audio: {text[:30]}...")
-        return text
-    except Exception as e:
-        logger.error(f"Whisper transcription failed: {e}")
+    """
+    Transcribe user audio using OpenAI hosted models to avoid local GPU/ffmpeg issues.
+    Prefers gpt-4o-transcribe, falls back to whisper-1.
+    """
+    client = _get_openai_client()
+    if client is None:
+        logger.error("Transcription requires OPENAI_API_KEY or OpenAI client.")
         return ""
-
-# ----------------------------------------------------------------------------
-# Core TTS save function
-# ----------------------------------------------------------------------------
-def save_bark_tts(text: str, output_path: str, **kwargs) -> str:
-    """
-    Synthesize text -> waveform, export to WAV.
-    """
+    model = os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
     try:
-        arr = generate_audio(text, **kwargs)
-        seg = AudioSegment(
-            arr.tobytes(), frame_rate=24000, sample_width=2, channels=1
-        )
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        seg.export(output_path, format="wav")
-        logger.info(f"Exported TTS: {output_path}")
+        with open(audio_path, "rb") as f:
+            resp = client.audio.transcriptions.create(
+                model=model,
+                file=f,
+            )
+        text = getattr(resp, "text", "") or ""
+        logger.info(f"Transcribed user audio: {text[:60]}...")
+        return text
+    except Exception as e_primary:
+        logger.warning(f"Transcription with {model} failed: {e_primary}")
+        try:
+            with open(audio_path, "rb") as f:
+                resp = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=f,
+                )
+            text = getattr(resp, "text", "") or ""
+            logger.info(f"Transcribed with whisper-1: {text[:60]}...")
+            return text
+        except Exception as e:
+            logger.error(f"All transcription backends failed: {e}")
+            return ""
+
+
+def save_bark_tts(
+    text: str,
+    output_path: str,
+    *,
+    voice: Optional[str] = None,
+    model: Optional[str] = None,
+    speed: Optional[float] = None,
+) -> str:
+    """
+    Synthesize text to speech.
+    Primary: OpenAI gpt-4o-mini-tts (streaming) → WAV
+    Fallback: offline pyttsx3 (quality lower, but reliable)
+    """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Try OpenAI TTS first
+    client = _get_openai_client()
+    if client is not None:
+        try:
+            tts_model = model or os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+            tts_voice = voice or os.getenv("OPENAI_TTS_VOICE", "verse")
+            kwargs = {"model": tts_model, "voice": tts_voice, "input": text}
+            if speed is not None:
+                kwargs["speed"] = float(speed)  # type: ignore
+            with client.audio.speech.with_streaming_response.create(**kwargs) as response:
+                response.stream_to_file(output_path)
+            logger.info(f"Exported TTS (OpenAI) → {output_path}")
+            return output_path
+        except Exception as e:
+            logger.warning(f"OpenAI TTS failed, falling back to pyttsx3: {e}")
+
+    # Fallback: pyttsx3
+    try:
+        import pyttsx3  # lightweight, offline on Windows
+
+        engine = pyttsx3.init()
+        if speed is not None:
+            try:
+                rate = engine.getProperty("rate")
+                engine.setProperty("rate", int(rate * float(speed)))
+            except Exception:
+                pass
+        # Ensure .wav extension
+        if not output_path.lower().endswith(".wav"):
+            output_path = f"{os.path.splitext(output_path)[0]}.wav"
+        engine.save_to_file(text, output_path)
+        engine.runAndWait()
+        logger.info(f"Exported TTS (pyttsx3) → {output_path}")
         return output_path
     except Exception as e:
-        logger.error(f"save_bark_tts failed: {e}")
+        logger.error(f"TTS failed (no available backends): {e}")
         raise
 
-# ----------------------------------------------------------------------------
-# Multi-Dimensional Emcee Technology
-# ----------------------------------------------------------------------------
 
+# ---------- Optional creative effects for layered voices ----------
 def apply_spatial_panning(seg: AudioSegment, pan_pos: float) -> AudioSegment:
     """
-    Simulate 3D panning: pan_pos ∈ [-1.0 (left) ... 1.0 (right)]
+    pan_pos ∈ [-1.0 (left) ... 1.0 (right)]
     """
     try:
-        stereo = seg.set_channels(2)
-        left, right = stereo.split_to_mono()
-        # Linear panning
-        left_gain = 1 - ((pan_pos + 1) / 2)
-        right_gain = (pan_pos + 1) / 2
-        left = left.apply_gain(-3 * (1 - left_gain))
-        right = right.apply_gain(-3 * (1 - right_gain))
-        return AudioSegment.from_mono_audiosegments(left, right)
+        return seg.pan(max(-1.0, min(1.0, pan_pos)))
     except Exception as e:
         logger.warning(f"Spatial panning failed: {e}")
         return seg
@@ -119,39 +147,33 @@ def apply_spatial_panning(seg: AudioSegment, pan_pos: float) -> AudioSegment:
 
 def granular_effect(seg: AudioSegment, grain_ms: int = 50, overlap: float = 0.5) -> AudioSegment:
     """
-    Apply granular synthesis: split into grains and reassemble with overlap.
+    Simple granular feel by slicing and minor speed jitter.
     """
     try:
         grains = []
-        step = int(grain_ms * (1 - overlap))
+        step = max(1, int(grain_ms * (1 - overlap)))
         for i in range(0, len(seg), step):
-            grain = seg[i:i+grain_ms]
-            # random small pitch shift
-            grain = effects.speedup(grain, playback_speed=random.uniform(0.9, 1.1))
-            grains.append(grain)
-        return sum(grains)
+            grain = seg[i : i + grain_ms]
+            speed = random.uniform(0.95, 1.05)
+            grains.append(effects.speedup(grain, playback_speed=speed))
+        return sum(grains) if grains else seg
     except Exception as e:
         logger.warning(f"Granular effect failed: {e}")
         return seg
 
 
-def dimension_shift(seg: AudioSegment, freq_mod: float = 0.2) -> AudioSegment:
+def dimension_shift(seg: AudioSegment, cents: float = 20.0) -> AudioSegment:
     """
-    Simulate dimension-shift by modulating pitch over time.
+    Very light pitch shift by frame rate trick (approx).
     """
     try:
-        # create a fast vibrato effect
-        modulated = seg._spawn(seg.raw_data, overrides={
-            "frame_rate": int(seg.frame_rate * (1 + freq_mod))
-        }).set_frame_rate(seg.frame_rate)
-        return modulated
+        factor = 2 ** (cents / 1200.0)
+        mod = seg._spawn(seg.raw_data, overrides={"frame_rate": int(seg.frame_rate * factor)})
+        return mod.set_frame_rate(seg.frame_rate)
     except Exception as e:
         logger.warning(f"Dimension shift failed: {e}")
         return seg
 
-# ----------------------------------------------------------------------------
-# High-Level Multi-Voice Synthesis
-# ----------------------------------------------------------------------------
 
 def save_multidimensional_tts(
     text: str,
@@ -159,38 +181,43 @@ def save_multidimensional_tts(
     layers: int = 3,
     pan_spread: float = 0.8,
     granular: bool = True,
-    dimension: bool = True
+    dimension: bool = True,
 ) -> str:
     """
-    Synthesize multi-layered, spatial, granular TTS for a futuristic emcee.
+    Multi-voice layering using the same backend TTS multiple times with effects.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     base = AudioSegment.silent(duration=0)
-    for i in range(layers):
-        try:
-            bar = generate_audio(text)
-            seg = AudioSegment(bar.tobytes(), frame_rate=24000, sample_width=2, channels=1)
-            # apply spatial distribution
-            pan = -pan_spread + 2*pan_spread*(i/(layers-1))
-            seg = apply_spatial_panning(seg, pan)
+    tmp_files = []
+    try:
+        for i in range(max(1, layers)):
+            tmp = os.path.join(os.path.dirname(output_path), f"_tmp_layer_{i}.wav")
+            save_bark_tts(text, tmp)
+            seg = AudioSegment.from_wav(tmp)
+            # spread across stereo field
+            if layers > 1:
+                pan = -pan_spread + 2 * pan_spread * (i / (layers - 1))
+                seg = apply_spatial_panning(seg, pan)
             if granular:
                 seg = granular_effect(seg)
             if dimension:
-                seg = dimension_shift(seg)
+                seg = dimension_shift(seg, cents=random.uniform(-30, 30))
             base = base.overlay(seg)
-            logger.debug(f"Layer {i} applied at pan {pan}")
-        except Exception as e:
-            logger.error(f"Layer {i} synthesis failed: {e}")
-    base = effects.normalize(base)
-    base.export(output_path, format="wav")
-    logger.info(f"Exported multidimensional TTS: {output_path}")
-    return output_path
+            tmp_files.append(tmp)
+        base = effects.normalize(base)
+        base.export(output_path, format="wav")
+        logger.info(f"Exported multidimensional TTS → {output_path}")
+        return output_path
+    finally:
+        for p in tmp_files:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
-# ----------------------------------------------------------------------------
-# Timing split remains unchanged
-# ----------------------------------------------------------------------------
+
 def split_bars_for_timing(text: str, bpm: int = 90):
     bar_ms = int((60000 / bpm) * 4)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    bars = lines[:16] if len(lines)>=16 else lines + ["..."]*(16-len(lines))
-    return [(bars[i], i*bar_ms) for i in range(16)]
+    bars = lines[:16] if len(lines) >= 16 else lines + ["..."] * (16 - len(lines))
+    return [(bars[i], i * bar_ms) for i in range(16)]

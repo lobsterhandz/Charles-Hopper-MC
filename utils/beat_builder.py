@@ -2,8 +2,8 @@ import os
 import logging
 import random
 from typing import Optional
-from pydub import AudioSegment
-from pydub.generators import Sine
+from pydub import AudioSegment, effects
+from pydub.generators import Sine, WhiteNoise
 
 # --------------------------------------------------
 # Logging configuration
@@ -53,11 +53,11 @@ def build_beat(
     Returns:
         The resolved output_path.
     """
-    # Resolve absolute paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    sample_dir = os.path.join(base_dir, sample_dir)
-    drums_dir = os.path.join(base_dir, drums_dir)
-    output_path = os.path.join(base_dir, output_path)
+    # Resolve absolute paths (project root, not utils/)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    sample_dir = os.path.join(project_root, sample_dir)
+    drums_dir = os.path.join(project_root, drums_dir)
+    output_path = os.path.join(project_root, output_path)
 
     logger.info(f"Building beat: {bpm} BPM, {bars} bars, swing ±{swing}ms")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -80,10 +80,27 @@ def build_beat(
             logger.warning(f"Failed to load sample {path}: {e}")
             return None
 
-    # Fallback synthesized tones
-    fallback_kick = Sine(60).to_audio_segment(duration=150).apply_gain(-2)
-    fallback_snare = Sine(200).to_audio_segment(duration=150).apply_gain(-6)
-    fallback_hat = Sine(8000).to_audio_segment(duration=80).apply_gain(-12)
+    # Fallback synthesized drums (modeled for realism)
+    def _synth_kick() -> AudioSegment:
+        body = Sine(60).to_audio_segment(duration=140).apply_gain(-1).fade_out(120)
+        sub = Sine(45).to_audio_segment(duration=160).apply_gain(-4).fade_out(140)
+        click = Sine(2000).to_audio_segment(duration=6).apply_gain(-10)
+        kick = body.overlay(sub).overlay(click)
+        return effects.low_pass_filter(kick, 250)
+
+    def _synth_snare() -> AudioSegment:
+        noise = WhiteNoise().to_audio_segment(duration=120).apply_gain(-8)
+        noise = effects.high_pass_filter(noise, 3000)
+        body = Sine(190).to_audio_segment(duration=120).apply_gain(-10).fade_out(100)
+        return noise.overlay(body)
+
+    def _synth_hat() -> AudioSegment:
+        noise = WhiteNoise().to_audio_segment(duration=70).apply_gain(-18)
+        return effects.high_pass_filter(noise, 6000).fade_out(50)
+
+    fallback_kick = _synth_kick()
+    fallback_snare = _synth_snare()
+    fallback_hat = _synth_hat()
 
     # Load or fallback drums
     kick = _load(drums_dir, 'kick') or fallback_kick
@@ -124,6 +141,47 @@ def build_beat(
         loops = total_ms // len(melody) + 1
         full_melody = (melody * loops)[:total_ms].fade_in(200).fade_out(200)
         beat = beat.overlay(full_melody)
+
+    # Add a simple bassline for realism (minor pentatonic around ~A/B/C/D)
+    try:
+        root_candidates = [55.0, 62.0, 65.4, 73.4]  # Hz
+        f0 = random.choice(root_candidates)
+        minor_pent = [1.0, 1.189, 1.335, 1.5, 1.782]  # 1, b3, 4, 5, b7
+        for bar_idx in range(bars):
+            base = bar_idx * bar_ms
+            # Two notes per bar (downbeats)
+            for step in (0, 2):
+                degree = (0 if step == 0 else 3)  # root then fifth
+                if random.random() < 0.25:
+                    degree = random.randrange(0, len(minor_pent))
+                freq = f0 * minor_pent[degree]
+                note_ms = int(bar_ms / 2.2)
+                note = Sine(freq).to_audio_segment(duration=note_ms).apply_gain(-14).fade_in(10).fade_out(60)
+                note = effects.low_pass_filter(note, 200)
+                pos = base + int(step * (bar_ms / 4)) + random.randint(-swing//2, swing//2)
+                beat = beat.overlay(note, position=max(0, pos))
+        # Light glue: tiny master fade
+        beat = beat.fade_in(50).fade_out(100)
+    except Exception as e:
+        logger.warning(f"Bassline synthesis failed: {e}")
+
+    # Add simple drummer's fills on every 4 bars (hat rolls + snare flam)
+    try:
+        for bar_idx in range(bars):
+            if (bar_idx + 1) % 4 != 0:
+                continue
+            bar_start = bar_idx * bar_ms
+            # Hat roll on the last quarter
+            roll_start = bar_start + int(0.75 * bar_ms)
+            step = int(bar_ms / 24)  # 1/24th notes
+            for i in range(6):
+                beat = beat.overlay(hat.apply_gain(-6), position=roll_start + i * step)
+            # Snare flam near the end
+            flam_pos = bar_start + int(0.96 * bar_ms)
+            beat = beat.overlay(snare.apply_gain(-3), position=flam_pos)
+            beat = beat.overlay(snare.apply_gain(-8), position=flam_pos + 12)
+    except Exception as e:
+        logger.warning(f"Drum fill synthesis failed: {e}")
 
     try:
         beat.export(output_path, format='wav')

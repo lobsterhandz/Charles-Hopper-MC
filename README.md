@@ -3,9 +3,9 @@ title: "Charles Hopper MC"
 emoji: "🎤"
 colorFrom: "gray"
 colorTo: "yellow"
-sdk: gradio                              # or streamlit  
-python_version: 3.10                   
-suggested_hardware: "Nvidia T4 - small"
+sdk: gradio
+python_version: 3.10
+suggested_hardware: "CPU / Any"
 sdk_version: 5.25.0
 app_file: app.py
 license: mit
@@ -23,40 +23,117 @@ tags:
 
 # Charles Hopper MC
 
-[![Open in Spaces](https://img.shields.io/badge/🤗%20Open%20in%20Spaces-blue?logo=HuggingFace&logoColor=white&style=for-the-badge)](https://huggingface.co/spaces/)
 [![Gradio App](https://img.shields.io/badge/Gradio-App-orange?logo=Gradio&logoColor=white&style=for-the-badge)](https://gradio.app/)
-[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white&style=for-the-badge)](https://www.python.org/)
-[![Demo](https://img.shields.io/badge/Demo-Available-brightgreen?style=for-the-badge)](https://huggingface.co/spaces/)
+[![Python](https://img.shields.io/badge/Python-3.10--3.12-blue?logo=python&logoColor=white&style=for-the-badge)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-A Gradio-powered app for assembling golden era hip-hop beats and generating verses in the style of classic MCs.
+Live battle rap experience: assemble a beat, freestyle into the mic, and get a ruthless AI rebuttal. Every run is varied for a fun, engaging session.
 
-## Project Structure
+## What’s New
 
-- **app.py**: Main Gradio app
-- **requirements.txt**: Python dependencies
-- **assets/**: Drum samples, golden era loops, intros, and optional fonts
-- **utils/**: Beat assembly, rhyming logic, speech tools, audio mixing
-- **generated/**: Output beats and verses (audio/text)
-- **.gitattributes**: LFS support for large audio files
+Stability and variety improvements for Windows and Spaces:
 
-## Features
+- Hosted OpenAI TTS/STT (with offline TTS fallback): reliable, no GPU or local Whisper required
+- Robust audio save/format handling for Gradio v5/v4 microphone input
+- Procedural beat builder with project-root asset resolution
+- Randomized BPM and sync offset each round; randomized style directives per verse for fresh bars
+- Minimal, clean requirements and optional librosa
+- Optional multi-voice layering/effects utilities for wild performances
 
-- Assemble classic hip-hop beats from curated samples and drum kits
-- Generate rhyming verses and rebuttals using Charlie's "brain"
-- Whisper-based speech-to-text and TTS for user and AI verses
-- Output synced audio for each round
+## Quickstart
 
-## Usage
+1) Install Python 3.10–3.12
 
-1. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-2. Run the app:
-   ```
-   python app.py
-   ```
+2) Install ffmpeg (required by pydub)
+- Windows (PowerShell):
+  - winget:
+    winget install --id=Gyan.FFmpeg -e --source winget
+  - or Chocolatey:
+    choco install ffmpeg
+  - Verify:
+    ffmpeg -version
+- macOS:
+  brew install ffmpeg
+- Linux (Debian/Ubuntu):
+  sudo apt-get update && sudo apt-get install -y ffmpeg
 
-## Hugging Face Spaces
+3) Install dependencies
+pip install -r requirements.txt
 
-This project is designed for deployment on [Hugging Face Spaces](https://huggingface.co/spaces).
+4) Set OpenAI API key (required for hosted TTS/STT)
+- PowerShell:
+  setx OPENAI_API_KEY "sk-..." 
+  # then close and reopen the terminal for it to take effect
+- Bash:
+  export OPENAI_API_KEY="sk-..."
+
+Optional environment overrides:
+- OPENAI_TTS_MODEL (default: gpt-4o-mini-tts)
+- OPENAI_TTS_VOICE (default: verse)
+- OPENAI_TRANSCRIBE_MODEL (default: gpt-4o-transcribe)
+- MODEL_NAME (LLM for writing bars; default: gpt-4o-mini)
+
+5) Run the app
+python app.py
+Open the printed local URL in your browser.
+
+## How To Use
+
+- Choose who goes first (you or AI)
+- If you go first:
+  - Press Start → a procedural beat is built with a randomized BPM
+  - Record your 16 bars in time with the beat
+  - Submit → AI generates 16-bar rebuttal and plays a synced mix
+- If AI goes first:
+  - Press Start → AI performs first 16 bars over the beat
+  - Then you respond and Submit to hear the next rebuttal
+- Use Next to advance rounds
+
+## Architecture
+
+- UI and orchestration: app.py
+  - Handlers: on_start(), on_submit(), on_next()
+- Beat building: utils/beat_builder.py
+  - build_beat(): procedural drums with optional melodic overlay; assets resolved from project root
+- Verse generation: utils/charlie_brain.py
+  - generate_bars(): LLM-backed bars with randomized style directives for variety
+- Speech tools: utils/speech_tools.py
+  - transcribe_user(): OpenAI hosted transcription (gpt-4o-transcribe → whisper-1 fallback)
+  - save_bark_tts(): OpenAI TTS (gpt-4o-mini-tts → offline pyttsx3 fallback)
+  - save_multidimensional_tts(): multi-voice layering + simple effects
+- Mixing: utils/audio_tools.py
+  - sync_bars_to_beat(): overlays synthesized bars with safe defaults on Windows
+  - mix_beat_and_voice(): overlay full takes if needed
+
+## Variability and Realism
+
+- Randomized BPM each round (86–94) and slight sync offset variance
+- Style directives are shuffled: flow/tempo/figurative devices/persona/culture references
+- Optional layering/effects (pan spread, granular feel, light dimension shift)
+- Beat swing and ghost snares for human feel
+
+## Assets
+
+Place your .wav drum samples and melodic loops under:
+- assets/drums/ (kick/snare/hat names help auto-pick, else fallback synthesized drums)
+- assets/samples/ (any .wav for melodic overlay; optional)
+
+If no assets are present, the builder falls back to synthesized tones so it still works.
+
+## Troubleshooting
+
+- “Couldn’t find ffmpeg”: Ensure ffmpeg is installed and on PATH; restart your terminal/IDE after install.
+- Microphone issues (Windows): Check Privacy & security → Microphone → allow apps/desktop apps; select the correct input in Gradio.
+- OpenAI errors: Verify OPENAI_API_KEY and account quota. The app will fall back to offline TTS if hosted TTS fails.
+- Quiet or clipping audio: This project normalizes mixes, but levels depend on your mic; adjust your input gain if needed.
+- librosa not installed: BPM detection falls back to a safe default; install librosa if you want detection.
+
+## Development Notes
+
+- Requirements are minimized. librosa is optional and lazy-guarded.
+- Parallel TTS synthesis is disabled by default to avoid engine/threading issues on Windows.
+- This project aims for safe, deterministic behavior even with missing assets and limited environments.
+
+## License
+
+MIT — see LICENSE.

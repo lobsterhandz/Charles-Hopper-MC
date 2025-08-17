@@ -10,7 +10,7 @@ from utils.charlie_stylers import slurify, infer_emotion, emcee_phrases
 # ── Initialization ─────────────────────────────────────────────────
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-model_name = os.getenv("MODEL_NAME", "gpt-4-turbo")
+model_name = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 # Logging setup
 log = logging.getLogger("charlie_brain")
@@ -36,22 +36,39 @@ def generate_bars(
     system_msg = {
         "role": "system",
         "content": (
-            "You are Charles Hopper MC—the dopest, most ruthless battle MC in the game. "
-            "Use explicit, raw, and uncensored street language. Your rhymes are lethal, "
-            "wordplay unmatched, delivery pure fire."
+            "You are Charles Hopper MC — a veteran battle rapper with razor delivery, breath control, and crowd work. "
+            "Perform like a real MC on stage: confident timing, swagger, and emotional dynamics. "
+            "Bars must be one line each; keep setups and punchlines tight. "
+            "Use raw, explicit street language where natural; clever wordplay and layered metaphors. "
+            "Occasionally include performance cues and ad-libs in parentheses (e.g., (yeah), (uh), (crowd: oooh!)) when it heightens impact. "
+            "Stay in character and be context-aware and relentless."
         )
     }
+
+    # User prompt with randomized style for variety
+    styles = [
+        "Flow: multisyllabic internal rhymes",
+        "Vibe: boom-bap 90s cypher",
+        "Style: double-time pockets and syncopation",
+        "Device: extended metaphors and wordplay",
+        "Persona: gritty, confident, menacing playfulness",
+        "References: classic hip-hop battles and culture"
+    ]
+    random.shuffle(styles)
+    flavor = " | ".join(styles[:2])
 
     # User prompt
     if charlie_first:
         prompt_text = (
             "Open the round with a legendary, hard-hitting 16-bar verse that mercilessly disses "
-            "an imaginary opponent."
+            "an imaginary opponent. "
+            f"Apply style: {flavor}. Keep each bar on a single line."
         )
     else:
         prompt_text = (
-            f"The user '{user_name}' just spat these weak disses:\n\n{user_lyrics}\n\n"
-            "Now reply with a savage 16-bar comeback."
+            f"The user '{user_name}' just spat these disses:\n\n{user_lyrics}\n\n"
+            "Reply with a savage 16-bar comeback. "
+            f"Apply style: {flavor}. Keep each bar on a single line."
         )
     user_msg = {"role": "user", "content": prompt_text}
     messages = [system_msg, user_msg]
@@ -61,7 +78,7 @@ def generate_bars(
         resp = client.chat.completions.create(
             model=model_name,
             messages=messages,
-            temperature=1.0,
+            temperature=1.1,
             max_tokens=400
         )
         raw = resp.choices[0].message.content

@@ -1,10 +1,7 @@
-import torch
 import numpy as np
-# Ensure safe serialization for numpy scalars
-torch.serialization.add_safe_globals([np.core.multiarray.scalar])
-
 import gradio as gr
 import os
+import random
 import soundfile as sf
 
 # Import improved modules
@@ -63,7 +60,8 @@ def on_start(go_first, round_num, user_name):
     """
     if go_first == "You":
         # User goes first: show beat and prompt recording
-        beat_path = build_beat(BEAT_PATH)
+        bpm = random.choice([86, 88, 90, 92, 94])
+        beat_path = build_beat(BEAT_PATH, bpm=bpm)
         status = "🎧 Your turn! Record your 16-bar freestyle to the beat."
         return (
             beat_path,
@@ -79,9 +77,10 @@ def on_start(go_first, round_num, user_name):
     else:
         # Charlie goes first: generate Charlie's verse
         charlie_rap = generate_bars(charlie_first=True, user_name=user_name)
-        bars_with_timing = split_bars_for_timing(charlie_rap, bpm=90)
-        build_beat(BEAT_PATH)
-        sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=1000)
+        bpm = random.choice([86, 88, 90, 92, 94])
+        bars_with_timing = split_bars_for_timing(charlie_rap, bpm=bpm)
+        build_beat(BEAT_PATH, bpm=bpm)
+        sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200))
         status = "🎤 Charlie's on the mic! Listen to his 16 bars, then respond."
         return (
             CHARLIE_MIX_PATH,
@@ -103,13 +102,38 @@ def on_submit(user_audio, go_first, round_num, user_name):
     """
     if user_audio is None:
         return "", None, gr.update(visible=False), "No audio detected. Please try again."
-    # Save user recording
-    sf.write(USER_AUDIO_PATH, user_audio, 44100)
+    # Save user recording (handle Gradio v4/v5 numpy formats)
+    os.makedirs(os.path.dirname(USER_AUDIO_PATH), exist_ok=True)
+    data = None
+    sr = 44100
+    try:
+        if isinstance(user_audio, dict):  # gradio v5
+            data = user_audio.get("data")
+            sr = int(user_audio.get("sampling_rate", sr))
+        elif isinstance(user_audio, tuple) and len(user_audio) == 2:
+            a, b = user_audio
+            if isinstance(a, np.ndarray):
+                data, sr = a, int(b)
+            else:
+                sr, data = int(a), b
+        elif isinstance(user_audio, np.ndarray):
+            data = user_audio
+        else:
+            data = None
+        if data is None:
+            raise ValueError("Unrecognized audio format from Gradio.")
+        # Ensure float32 for soundfile
+        import numpy as _np
+        if getattr(data, "dtype", None) != _np.float32:
+            data = _np.asarray(data, dtype=_np.float32)
+        sf.write(USER_AUDIO_PATH, data, sr)
+    except Exception as e:
+        return "", None, gr.update(visible=False), f"Audio save failed: {e}"
     user_lyrics = transcribe_user(USER_AUDIO_PATH)
     # Generate Charlie's response
     charlie_rap = generate_bars(user_lyrics=user_lyrics, charlie_first=False, user_name=user_name)
     bars_with_timing = split_bars_for_timing(charlie_rap, bpm=90)
-    sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=1000)
+    sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200))
     status = "🔥 Charlie fires back with 16 brutal bars! Ready for the next round?"
     return charlie_rap, CHARLIE_MIX_PATH, gr.update(visible=True), status
 
@@ -189,7 +213,7 @@ with gr.Blocks(css=custom_css) as demo:
     )
 
     play_charlie_button.click(
-        lambda audio_path: gr.update(value=audio_path),
+        lambda audio_path: gr.update(value=audio_path, visible=True),
         inputs=[charlie_mix_display],
         outputs=[charlie_mix_display]
     )
