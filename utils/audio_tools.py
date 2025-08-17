@@ -116,12 +116,12 @@ def sync_bars_to_beat(
     apply_fade: bool = True,
     fade_duration: int = 50,
     voice_gain_adjustment: float = 0.0
-) -> str:
+) -> Tuple[str, int]:
     """
     Overlay synthesized bars onto the beat with timing, optional concurrency,
     fade, gain, and robust error handling.
 
-    Returns the output_path on success.
+    Returns (output_path, overlays_count).
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -183,6 +183,7 @@ def sync_bars_to_beat(
 
     # Overlay each clip with gentle ducking under vocals
     mixed = beat[:]
+    overlays_count = 0
     for idx, (bar_text, start_ms) in enumerate(bars_with_timing):
         pair = clips.get(idx)
         position = offset_ms + start_ms
@@ -208,6 +209,7 @@ def sync_bars_to_beat(
 
         try:
             mixed = mixed.overlay(clip, position=position)
+            overlays_count += 1
             logger.info(f"Overlayed bar {idx} at {position}ms")
         except Exception as e:
             logger.error(f"Failed to overlay bar {idx}: {e}")
@@ -221,7 +223,7 @@ def sync_bars_to_beat(
         logger.error(f"Failed to export mix: {e}")
         raise
 
-    return output_path
+    return output_path, overlays_count
 
 # ----------------------------------------------------------------------------
 # Core: Mix Beat and Full Voice Clip

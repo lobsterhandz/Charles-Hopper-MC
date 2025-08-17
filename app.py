@@ -80,17 +80,21 @@ def on_start(go_first, round_num, user_name):
         bpm = random.choice([86, 88, 90, 92, 94])
         bars_with_timing = split_bars_for_timing(charlie_rap, bpm=bpm)
         build_beat(BEAT_PATH, bpm=bpm)
-        sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200))
+        mix_path, overlay_cnt = sync_bars_to_beat(
+            BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200)
+        )
         status = "🎤 Charlie's on the mic! Listen to his 16 bars, then respond."
+        if overlay_cnt == 0:
+            status += " (No AI voice detected — set OPENAI_API_KEY in the Space settings.)"
         return (
-            CHARLIE_MIX_PATH,
+            mix_path,
             gr.update(visible=False),  # user_audio_input
             charlie_rap,
-            CHARLIE_MIX_PATH,
-            gr.update(visible=True),   # play_charlie_button
-            gr.update(visible=True),   # next_button
-            gr.update(visible=False),  # start_button hidden after press
-            gr.update(visible=False),  # submit_button
+            gr.update(value=mix_path, visible=False),  # keep download track hidden
+            gr.update(visible=False),   # play_charlie_button hidden; rely on autoplay
+            gr.update(visible=True),    # next_button
+            gr.update(visible=False),   # start_button hidden after press
+            gr.update(visible=False),   # submit_button
             status
         )
 
@@ -101,7 +105,8 @@ def on_submit(user_audio, go_first, round_num, user_name):
     transcribes to text, generates Charlie's response, and mixes it.
     """
     if user_audio is None:
-        return "", None, gr.update(visible=False), "No audio detected. Please try again."
+        # Return 5 outputs: beat_audio_display, charlie_rap_display, charlie_mix_display, next_button, status_markdown
+        return "", "", None, gr.update(visible=False), "No audio detected. Please try again."
     # Save user recording (handle Gradio v4/v5 numpy formats)
     os.makedirs(os.path.dirname(USER_AUDIO_PATH), exist_ok=True)
     data = None
@@ -128,14 +133,20 @@ def on_submit(user_audio, go_first, round_num, user_name):
             data = _np.asarray(data, dtype=_np.float32)
         sf.write(USER_AUDIO_PATH, data, sr)
     except Exception as e:
-        return "", None, gr.update(visible=False), f"Audio save failed: {e}"
+        # Return 5 outputs on error
+        return "", "", None, gr.update(visible=False), f"Audio save failed: {e}"
     user_lyrics = transcribe_user(USER_AUDIO_PATH)
     # Generate Charlie's response
     charlie_rap = generate_bars(user_lyrics=user_lyrics, charlie_first=False, user_name=user_name)
     bars_with_timing = split_bars_for_timing(charlie_rap, bpm=90)
-    sync_bars_to_beat(BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200))
+    mix_path, overlay_cnt = sync_bars_to_beat(
+        BEAT_PATH, bars_with_timing, CHARLIE_MIX_PATH, offset_ms=random.randint(600, 1200)
+    )
     status = "🔥 Charlie fires back with 16 brutal bars! Ready for the next round?"
-    return charlie_rap, CHARLIE_MIX_PATH, gr.update(visible=True), status
+    if overlay_cnt == 0:
+        status += " (No AI voice detected — set OPENAI_API_KEY in the Space settings.)"
+    # Autoplay Charlie's mix in the main audio component; keep download track hidden
+    return mix_path, charlie_rap, gr.update(value=mix_path, visible=False), gr.update(visible=True), status
 
 
 def on_next(go_first, round_num, user_name):
@@ -165,7 +176,7 @@ with gr.Blocks(css=custom_css) as demo:
         play_charlie_button = gr.Button("Play Charlie's Verse", visible=False)
         next_button = gr.Button("Next", visible=False)
 
-    beat_audio_display = gr.Audio(label="Beat / Charlie's Mix", type="filepath", interactive=False)
+    beat_audio_display = gr.Audio(label="Beat / Charlie's Mix", type="filepath", interactive=False, autoplay=True)
     user_audio_input = gr.Audio(
         label="Your Freestyle",
         type="numpy",
@@ -209,7 +220,7 @@ with gr.Blocks(css=custom_css) as demo:
     submit_button.click(
         on_submit,
         inputs=[user_audio_input, go_first_radio, round_num_state, user_name_input],
-        outputs=[charlie_rap_display, charlie_mix_display, next_button, status_markdown]
+        outputs=[beat_audio_display, charlie_rap_display, charlie_mix_display, next_button, status_markdown]
     )
 
     play_charlie_button.click(

@@ -57,6 +57,22 @@ def generate_bars(
     random.shuffle(styles)
     flavor = " | ".join(styles[:2])
 
+    # Light analysis of the user's verse for rhyme cues and callbacks
+    def _cues(txt: str):
+        lines = [l.strip() for l in (txt or "").splitlines() if l.strip()]
+        last_words = []
+        for l in lines:
+            toks = [t for t in l.split() if t]
+            if toks:
+                last_words.append(toks[-1].strip(".,!?;:").lower())
+        rhyme_keys = sorted({w[-3:] for w in last_words if len(w) >= 3})
+        # Top repeated words (simple motif cue)
+        counts = {}
+        for w in (t for l in lines for t in l.lower().split()):
+            counts[w] = counts.get(w, 0) + 1
+        motifs = [w for w, c in sorted(counts.items(), key=lambda kv: kv[1], reverse=True) if c > 1][:5]
+        return last_words[:12], rhyme_keys[:8], motifs
+
     # User prompt
     if charlie_first:
         prompt_text = (
@@ -65,10 +81,18 @@ def generate_bars(
             f"Apply style: {flavor}. Keep each bar on a single line."
         )
     else:
+        ends, rhyme_keys, motifs = _cues(user_lyrics or "")
         prompt_text = (
-            f"The user '{user_name}' just spat these disses:\n\n{user_lyrics}\n\n"
-            "Reply with a savage 16-bar comeback. "
-            f"Apply style: {flavor}. Keep each bar on a single line."
+            f"The user '{user_name}' just performed:\n\n{user_lyrics}\n\n"
+            "Now craft a savage, context-aware 16-bar rebuttal with the following constraints:\n"
+            f"- Target name: {user_name} (use it directly and in wordplay; include slant rhymes).\n"
+            f"- Mirror their end-rhyme feel. User line-end tokens: {', '.join(ends) or 'n/a'}; "
+            f"approx rhyme keys: {', '.join(rhyme_keys) or 'n/a'}.\n"
+            f"- Call back specific phrases/motifs: {', '.join(motifs) or 'n/a'}.\n"
+            "- Employ phonetic rhythm, internal multisyllabics, and layered metaphors that tie to their name and lines.\n"
+            "- Crowd energy and ad-libs sparingly (e.g., (yeah), (uh), (crowd: oooh!)).\n"
+            "- Keep each bar on exactly one line; return only the 16 lines.\n"
+            f"Apply style: {flavor}."
         )
     user_msg = {"role": "user", "content": prompt_text}
     messages = [system_msg, user_msg]
